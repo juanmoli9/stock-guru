@@ -79,6 +79,7 @@ object SentimentAnalysisUtils {
 }
 
 object TwitterAnalysisUtils {
+
   def companiesMentioned(companies : List[List[String]], text: String) : List[String] = {
     val compMent = ListBuffer[String]()
     val textWords = text.split(" ")
@@ -92,6 +93,19 @@ object TwitterAnalysisUtils {
     }
     return compMent.toList
   }
+
+  def checkCompanies(companies : List[List[String]], text: String) : Boolean = {
+    val textWords = text.split(" ")
+    for(comp <- companies){
+      for(tag <- comp){
+        if(textWords.contains(tag)){
+          return true
+        }
+      }
+    }
+    return false
+  }
+
   def getTags(): List[List[String]] = {
       // each row is an array of strings (the columns in the csv file)
       val rows = ListBuffer[List[String]]()
@@ -116,6 +130,7 @@ object TwitterAnalysisUtils {
           }
       return rows.toList
     }
+
 }
 
 
@@ -142,7 +157,9 @@ object TwitterStream {
     stream.foreachRDD{(rdd, time) =>
       // uncomment to limit the number of tweets colected
       //tweetsCollected += rdd.count().toInt
-      val newRdd = rdd.filter(t => t.getLang == "en").map( t =>{
+      val newRdd = rdd.filter(t => t.getLang == "en")
+        .filter(t => TwitterAnalysisUtils.checkCompanies(compAndTags,t.getText))
+        .map( t =>{
         Map(
           "user"-> t.getUser.getScreenName,
           "created_at" -> t.getCreatedAt.toInstant.toString,
@@ -154,17 +171,22 @@ object TwitterStream {
           "text_sentiment_score" -> SentimentAnalysisUtils.detectSentiment(t.getText)
         )
       })
-      newRdd.saveToEs("twitter/tweet")
-      newRdd.foreach{t =>
-        print("User: ")
-        println(t get "user")
-        print("Text: ")
-        println(t get "text")
-        print("Companies mentioned :")
-        println(t get "companies_mentioned")
-        print("Text sentiment: ")
-        println(t get "text_sentiment_score")
-      }
+
+    // val filteredRdd = newRdd.filter( t => !(t("companies_mentioned").isEmpty))
+
+    newRdd.saveToEs("tweets/tweet")
+
+    newRdd.foreach{t =>
+                print("User: ")
+                println(t("user"))
+                print("Text: ")
+                println(t("text"))
+                print("Companies mentioned :")
+                println(t("companies_mentioned"))
+                print("Text sentiment: ")
+                println(t("text_sentiment_score"))
+
+              }
 
       if (tweetsCollected.value >= tweetsToCollect) {
         System.exit(0)
